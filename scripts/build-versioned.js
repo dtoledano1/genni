@@ -108,17 +108,47 @@ try {
   // Create zip file
   console.log(`📦 Creating zip file: dist/${version}.zip`);
   const zipPath = path.join(distPath, `${version}.zip`);
-  
-  try {
-    // Use the system's zip command to create the archive
-    // Change to the versioned directory and zip its contents
-    process.chdir(versionedPath);
-    execSync(`zip -r "../${version}.zip" .`, { stdio: 'inherit' });
-    process.chdir(path.join(__dirname, '..'));
-    
-    console.log(`📁 Zip file created: dist/${version}.zip`);
-  } catch (error) {
-    console.warn(`⚠️  Failed to create zip file: ${error.message}`);
+
+  // Remove any stale archive so the zip tooling starts clean.
+  if (fs.existsSync(zipPath)) {
+    fs.rmSync(zipPath);
+  }
+
+  const zipStrategies = [
+    {
+      name: 'zip',
+      run: () => {
+        process.chdir(versionedPath);
+        execSync(`zip -r "../${version}.zip" .`, { stdio: 'inherit' });
+        process.chdir(path.join(__dirname, '..'));
+      }
+    },
+    {
+      name: 'PowerShell Compress-Archive',
+      run: () => {
+        // Windows fallback: zip the contents of the versioned folder.
+        const command =
+          `Compress-Archive -Path '${path.join(versionedPath, '*')}' ` +
+          `-DestinationPath '${zipPath}' -Force`;
+        execSync(`powershell -NoProfile -Command "${command}"`, { stdio: 'inherit' });
+      }
+    }
+  ];
+
+  let zipped = false;
+  for (const strategy of zipStrategies) {
+    try {
+      strategy.run();
+      console.log(`📁 Zip file created: dist/${version}.zip (via ${strategy.name})`);
+      zipped = true;
+      break;
+    } catch {
+      // Try the next strategy.
+    }
+  }
+
+  if (!zipped) {
+    console.warn('⚠️  Could not create the zip automatically.');
     console.log(`💡 You can manually zip the contents of dist/${version}/ folder`);
   }
   
